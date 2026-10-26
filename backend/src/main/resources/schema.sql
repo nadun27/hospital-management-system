@@ -1,0 +1,150 @@
+CREATE TABLE IF NOT EXISTS departments (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL UNIQUE
+);
+CREATE TABLE IF NOT EXISTS roles (
+ code VARCHAR(30) PRIMARY KEY, name VARCHAR(80) NOT NULL
+);
+INSERT INTO roles(code,name) SELECT 'ADMIN','Administrator' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code='ADMIN');
+INSERT INTO roles(code,name) SELECT 'DOCTOR','Doctor' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code='DOCTOR');
+INSERT INTO roles(code,name) SELECT 'NURSE','Nurse' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code='NURSE');
+INSERT INTO roles(code,name) SELECT 'RECEPTIONIST','Receptionist' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code='RECEPTIONIST');
+INSERT INTO roles(code,name) SELECT 'LAB','Laboratory staff' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code='LAB');
+INSERT INTO roles(code,name) SELECT 'PHARMACIST','Pharmacist' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code='PHARMACIST');
+INSERT INTO roles(code,name) SELECT 'ACCOUNTANT','Accountant' WHERE NOT EXISTS (SELECT 1 FROM roles WHERE code='ACCOUNTANT');
+CREATE TABLE IF NOT EXISTS users (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(60) NOT NULL UNIQUE,
+ name VARCHAR(120) NOT NULL, password_hash VARCHAR(300) NOT NULL,
+ role VARCHAR(30) NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE, auth_version INT NOT NULL DEFAULT 0,
+ FOREIGN KEY (role) REFERENCES roles(code)
+);
+CREATE TABLE IF NOT EXISTS patients (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(120) NOT NULL,
+ dob DATE NOT NULL, gender VARCHAR(30) NOT NULL, phone VARCHAR(30) NOT NULL,
+ email VARCHAR(150), address VARCHAR(500), blood_group VARCHAR(10), allergies VARCHAR(1000)
+);
+CREATE TABLE IF NOT EXISTS doctors (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(120) NOT NULL,
+ department_id BIGINT NOT NULL, specialization VARCHAR(120) NOT NULL,
+ consultation_fee DECIMAL(12,2) NOT NULL, active BOOLEAN NOT NULL DEFAULT TRUE,
+ FOREIGN KEY (department_id) REFERENCES departments(id)
+);
+CREATE TABLE IF NOT EXISTS doctor_schedules (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, doctor_id BIGINT NOT NULL,
+ weekday INT NOT NULL, start_time TIME NOT NULL, end_time TIME NOT NULL,
+ FOREIGN KEY (doctor_id) REFERENCES doctors(id)
+);
+CREATE TABLE IF NOT EXISTS appointments (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL,
+ doctor_id BIGINT NOT NULL, start_at DATETIME NOT NULL, end_at DATETIME NOT NULL,
+ status VARCHAR(30) NOT NULL DEFAULT 'BOOKED', notes VARCHAR(1000),
+ FOREIGN KEY (patient_id) REFERENCES patients(id), FOREIGN KEY (doctor_id) REFERENCES doctors(id),
+ INDEX idx_appointment_doctor (doctor_id, start_at), INDEX idx_appointment_patient (patient_id, start_at)
+);
+CREATE TABLE IF NOT EXISTS encounters (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL,
+ doctor_id BIGINT NOT NULL, appointment_id BIGINT UNIQUE, diagnosis VARCHAR(2000) NOT NULL,
+ treatment VARCHAR(4000), notes VARCHAR(4000), created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (patient_id) REFERENCES patients(id), FOREIGN KEY (doctor_id) REFERENCES doctors(id),
+ FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+);
+CREATE TABLE IF NOT EXISTS test_catalog (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(120) NOT NULL UNIQUE,
+ price DECIMAL(12,2) NOT NULL, reference_range VARCHAR(250)
+);
+CREATE TABLE IF NOT EXISTS lab_orders (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL, encounter_id BIGINT,
+ test_id BIGINT NOT NULL, status VARCHAR(30) NOT NULL DEFAULT 'REQUESTED',
+ result_text VARCHAR(4000), created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ collected_at DATETIME, completed_at DATETIME,
+ FOREIGN KEY (patient_id) REFERENCES patients(id), FOREIGN KEY (encounter_id) REFERENCES encounters(id),
+ FOREIGN KEY (test_id) REFERENCES test_catalog(id)
+);
+CREATE TABLE IF NOT EXISTS medicines (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(120) NOT NULL,
+ batch_no VARCHAR(60) NOT NULL, expiry_date DATE NOT NULL,
+ stock INT NOT NULL, unit_price DECIMAL(12,2) NOT NULL, reorder_level INT NOT NULL DEFAULT 10,
+ UNIQUE (name, batch_no)
+);
+CREATE TABLE IF NOT EXISTS prescriptions (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL, encounter_id BIGINT NOT NULL,
+ status VARCHAR(30) NOT NULL DEFAULT 'PENDING', notes VARCHAR(2000),
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, dispensed_at DATETIME,
+ FOREIGN KEY (patient_id) REFERENCES patients(id), FOREIGN KEY (encounter_id) REFERENCES encounters(id)
+);
+CREATE TABLE IF NOT EXISTS prescription_items (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, prescription_id BIGINT NOT NULL, medicine_id BIGINT NOT NULL,
+ quantity INT NOT NULL, instructions VARCHAR(1000),
+ FOREIGN KEY (prescription_id) REFERENCES prescriptions(id), FOREIGN KEY (medicine_id) REFERENCES medicines(id),
+ UNIQUE (prescription_id, medicine_id)
+);
+CREATE TABLE IF NOT EXISTS stock_movements (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, medicine_id BIGINT NOT NULL, change_qty INT NOT NULL,
+ reason VARCHAR(200) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (medicine_id) REFERENCES medicines(id)
+);
+CREATE TABLE IF NOT EXISTS beds (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, ward VARCHAR(80) NOT NULL, bed_number VARCHAR(40) NOT NULL UNIQUE,
+ daily_rate DECIMAL(12,2) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS admissions (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL, bed_id BIGINT NOT NULL,
+ admitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, discharged_at DATETIME,
+ daily_rate DECIMAL(12,2) NOT NULL, notes VARCHAR(2000),
+ FOREIGN KEY (patient_id) REFERENCES patients(id), FOREIGN KEY (bed_id) REFERENCES beds(id),
+ INDEX idx_admission_bed (bed_id, discharged_at)
+);
+CREATE TABLE IF NOT EXISTS invoices (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL,
+ total DECIMAL(12,2) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (patient_id) REFERENCES patients(id)
+);
+CREATE TABLE IF NOT EXISTS charges (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL,
+ source_type VARCHAR(30) NOT NULL, source_id BIGINT NOT NULL, description VARCHAR(250) NOT NULL,
+ amount DECIMAL(12,2) NOT NULL, invoice_id BIGINT,
+ FOREIGN KEY (patient_id) REFERENCES patients(id), FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+ UNIQUE (source_type, source_id), INDEX idx_unbilled (patient_id, invoice_id)
+);
+CREATE TABLE IF NOT EXISTS invoice_items (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, invoice_id BIGINT NOT NULL, charge_id BIGINT NOT NULL UNIQUE,
+ description VARCHAR(250) NOT NULL, amount DECIMAL(12,2) NOT NULL,
+ FOREIGN KEY (invoice_id) REFERENCES invoices(id), FOREIGN KEY (charge_id) REFERENCES charges(id)
+);
+CREATE TABLE IF NOT EXISTS payments (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, invoice_id BIGINT NOT NULL,
+ amount DECIMAL(12,2) NOT NULL, method VARCHAR(30) NOT NULL,
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+);
+CREATE TABLE IF NOT EXISTS employees (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(120) NOT NULL, department_id BIGINT NOT NULL,
+ job_title VARCHAR(100) NOT NULL, phone VARCHAR(30), email VARCHAR(150),
+ FOREIGN KEY (department_id) REFERENCES departments(id)
+);
+CREATE TABLE IF NOT EXISTS attendance (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, employee_id BIGINT NOT NULL, work_date DATE NOT NULL,
+ status VARCHAR(30) NOT NULL, FOREIGN KEY (employee_id) REFERENCES employees(id),
+ UNIQUE (employee_id, work_date)
+);
+CREATE TABLE IF NOT EXISTS leave_requests (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, employee_id BIGINT NOT NULL,
+ start_date DATE NOT NULL, end_date DATE NOT NULL, reason VARCHAR(1000) NOT NULL,
+ status VARCHAR(30) NOT NULL DEFAULT 'PENDING', FOREIGN KEY (employee_id) REFERENCES employees(id)
+);
+CREATE TABLE IF NOT EXISTS patient_documents (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL, filename VARCHAR(200) NOT NULL,
+ content_type VARCHAR(100) NOT NULL, content LONGBLOB NOT NULL,
+ uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (patient_id) REFERENCES patients(id)
+);
+CREATE TABLE IF NOT EXISTS audit_logs (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, user_id BIGINT, action VARCHAR(80) NOT NULL,
+ entity_type VARCHAR(60) NOT NULL, entity_id BIGINT,
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS nursing_notes (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, patient_id BIGINT NOT NULL, user_id BIGINT NOT NULL,
+ observation VARCHAR(4000) NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY (patient_id) REFERENCES patients(id), FOREIGN KEY (user_id) REFERENCES users(id)
+);
